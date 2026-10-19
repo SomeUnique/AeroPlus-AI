@@ -1,0 +1,1537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AeroPulse-1 · Mission Control (SIMULATED)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2322d3ee' d='M12 2l2.4 6.2L21 10l-6.6 1.8L12 18l-2.4-6.2L3 10l6.6-1.8L12 2z'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        ink: "#05070D",
+        accent: "#22d3ee",
+        nominal: "#34d399",
+        warn: "#fbbf24",
+        crit: "#f87171",
+        dim: "#64748b",
+      },
+      fontFamily: {
+        display: ['"Space Grotesk"', "sans-serif"],
+        mono: ['"JetBrains Mono"', "monospace"],
+      },
+    },
+  },
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #05070d;
+    --panel: rgba(11, 17, 29, 0.72);
+    --panel-solid: #0a1120;
+    --line: rgba(148, 197, 230, 0.13);
+    --line-strong: rgba(148, 197, 230, 0.25);
+    --txt: #dbe7f5;
+    --dim: #6b7f99;
+    --accent: #22d3ee;
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --crit: #f87171;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--txt);
+    font-family: "Space Grotesk", sans-serif;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection { background: rgba(34, 211, 238, 0.25); color: #fff; }
+  .mono { font-family: "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; }
+
+  .bg-grid {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(34, 211, 238, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34, 211, 238, 0.04) 1px, transparent 1px);
+    background-size: 52px 52px;
+    mask-image: radial-gradient(ellipse 90% 75% at 50% 30%, #000 30%, transparent 100%);
+    z-index: 0;
+  }
+  .bg-vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(1300px 560px at 50% -12%, rgba(34, 211, 238, 0.08), transparent 62%),
+      radial-gradient(900px 600px at 100% 100%, rgba(56, 189, 248, 0.045), transparent 60%);
+    z-index: 0;
+  }
+  #alertGlow {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 40;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+  }
+  body.state-warning #alertGlow {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.35), inset 0 0 140px rgba(251, 191, 36, 0.07);
+  }
+  body.state-critical #alertGlow {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.45), inset 0 0 160px rgba(248, 113, 113, 0.1);
+    animation: critBreathe 2.6s ease-in-out infinite;
+  }
+  @keyframes critBreathe {
+    0%, 100% { box-shadow: inset 0 0 0 1px rgba(248,113,113,.45), inset 0 0 130px rgba(248,113,113,.07); }
+    50% { box-shadow: inset 0 0 0 1px rgba(248,113,113,.72), inset 0 0 200px rgba(248,113,113,.15); }
+  }
+
+  .glass {
+    position: relative;
+    background: linear-gradient(180deg, rgba(15, 23, 38, 0.82), rgba(8, 12, 22, 0.9));
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 34px 70px -34px rgba(0, 0, 0, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: border-color 0.5s ease, box-shadow 0.5s ease;
+  }
+  .glass::after {
+    content: "";
+    position: absolute;
+    inset: 0 18% auto 18%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.22), transparent);
+    pointer-events: none;
+  }
+  .glass-hover:hover { border-color: var(--line-strong); }
+  .framed::before, .framed::after {
+    content: "";
+    position: absolute;
+    width: 18px; height: 18px;
+    pointer-events: none;
+    opacity: 0.55;
+    transition: opacity 0.6s ease;
+  }
+  .framed::before {
+    top: 12px; left: 12px;
+    border-top: 1px solid rgba(34, 211, 238, 0.5);
+    border-left: 1px solid rgba(34, 211, 238, 0.5);
+    border-top-left-radius: 5px;
+  }
+  .framed::after {
+    bottom: 12px; right: 12px;
+    border-bottom: 1px solid rgba(34, 211, 238, 0.5);
+    border-right: 1px solid rgba(34, 211, 238, 0.5);
+    border-bottom-right-radius: 5px;
+  }
+  .panel-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--dim);
+    font-weight: 500;
+  }
+  .panel-label::before {
+    content: "";
+    width: 11px; height: 1px;
+    background: linear-gradient(90deg, rgba(34, 211, 238, 0.75), rgba(34, 211, 238, 0.1));
+    flex: none;
+  }
+  .hairline { border-color: var(--line); }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 600;
+    border: 1px solid var(--line);
+    color: var(--dim);
+    white-space: nowrap;
+    transition: color 0.45s ease, border-color 0.45s ease, background 0.45s ease, box-shadow 0.45s ease;
+  }
+  .chip-ok { color: var(--ok); border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.07); }
+  .chip-warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.45); background: rgba(251, 191, 36, 0.08); }
+  .chip-crit { color: var(--crit); border-color: rgba(248, 113, 113, 0.5); background: rgba(248, 113, 113, 0.1); }
+  .chip-cyan { color: var(--accent); border-color: rgba(34, 211, 238, 0.4); background: rgba(34, 211, 238, 0.07); }
+  .chip-amber-outline { color: #fcd34d; border-color: rgba(251, 191, 36, 0.55); background: rgba(120, 53, 15, 0.35); letter-spacing: 0.2em; }
+
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .dot-ok { background: var(--ok); box-shadow: 0 0 10px rgba(52, 211, 153, 0.85); animation: pulse 2.2s infinite; }
+  .dot-crit { background: var(--crit); box-shadow: 0 0 10px rgba(248, 113, 113, 0.85); animation: pulse 1.2s infinite; }
+  .dot-dim { background: #475569; }
+  .dot-warn { background: var(--warn); box-shadow: 0 0 10px rgba(251, 191, 36, 0.85); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .state-badge {
+    padding: 8px 18px;
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    border: 1px solid;
+    transition: all 0.5s var(--ease);
+  }
+  .state-nominal { color: var(--ok); border-color: rgba(52, 211, 153, 0.5); background: rgba(52, 211, 153, 0.08); box-shadow: 0 0 22px -8px rgba(52, 211, 153, 0.55); }
+  .state-warning { color: var(--warn); border-color: rgba(251, 191, 36, 0.55); background: rgba(251, 191, 36, 0.1); box-shadow: 0 0 28px -8px rgba(251, 191, 36, 0.75); animation: pulse 1.8s infinite; }
+  .state-critical { color: var(--crit); border-color: rgba(248, 113, 113, 0.65); background: rgba(248, 113, 113, 0.12); box-shadow: 0 0 36px -8px rgba(248, 113, 113, 0.85); animation: pulse 1.1s infinite; }
+
+  .sub-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 16px 16px 20px;
+    background: rgba(9, 14, 25, 0.65);
+    transition: border-color 0.55s ease, box-shadow 0.55s ease, background 0.55s ease;
+  }
+  .sub-card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 16px; bottom: 16px;
+    width: 2px;
+    border-radius: 2px;
+    background: rgba(148, 197, 230, 0.16);
+    transition: background 0.5s ease, box-shadow 0.5s ease;
+  }
+  .sub-card.warn {
+    border-color: rgba(251, 191, 36, 0.5);
+    background: rgba(24, 20, 12, 0.45);
+    box-shadow: 0 0 28px -8px rgba(251, 191, 36, 0.35), inset 0 0 0 1px rgba(251, 191, 36, 0.07);
+  }
+  .sub-card.warn::before { background: var(--warn); box-shadow: 0 0 14px rgba(251, 191, 36, 0.9); }
+  .sub-card.crit {
+    border-color: rgba(248, 113, 113, 0.6);
+    background: rgba(26, 13, 16, 0.5);
+    animation: cardCrit 2.8s ease-in-out infinite;
+  }
+  .sub-card.crit::before { background: var(--crit); box-shadow: 0 0 16px rgba(248, 113, 113, 1); }
+  @keyframes cardCrit {
+    0%, 100% { box-shadow: 0 0 26px -10px rgba(248, 113, 113, 0.4), inset 0 0 0 1px rgba(248, 113, 113, 0.09); }
+    50% { box-shadow: 0 0 42px -8px rgba(248, 113, 113, 0.62), inset 0 0 0 1px rgba(248, 113, 113, 0.14); }
+  }
+
+  .chart-box { position: relative; height: 108px; }
+  .chart-box canvas { transition: filter 0.6s ease; }
+
+  .val-flash { animation: valFlash 0.65s ease-out; }
+  @keyframes valFlash { 0% { text-shadow: 0 0 16px currentColor; } 100% { text-shadow: 0 0 0 transparent; } }
+
+  .btn {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 8px 15px;
+    border-radius: 9px;
+    border: 1px solid var(--line-strong);
+    background: rgba(20, 32, 52, 0.7);
+    color: var(--txt);
+    cursor: pointer;
+    transition: background 0.28s var(--ease), border-color 0.28s var(--ease), color 0.28s var(--ease), box-shadow 0.28s var(--ease), transform 0.15s ease;
+  }
+  .btn:hover { background: rgba(30, 48, 76, 0.9); border-color: rgba(34, 211, 238, 0.5); color: #fff; box-shadow: 0 0 22px -6px rgba(34, 211, 238, 0.55), inset 0 0 14px rgba(34, 211, 238, 0.05); }
+  .btn:active { transform: translateY(1px) scale(0.99); }
+  .btn:disabled { opacity: 0.45; cursor: wait; }
+  .btn-approve { background: rgba(6, 78, 59, 0.55); border-color: rgba(52, 211, 153, 0.5); color: #a7f3d0; }
+  .btn-approve:hover { background: rgba(6, 95, 70, 0.8); border-color: rgba(52, 211, 153, 0.85); color: #ecfdf5; box-shadow: 0 0 24px -6px rgba(52, 211, 153, 0.65); }
+  .btn-fault { background: rgba(124, 45, 18, 0.35); border-color: rgba(251, 146, 60, 0.4); color: #fed7aa; }
+  .btn-fault:hover { background: rgba(154, 52, 18, 0.6); border-color: rgba(251, 146, 60, 0.8); box-shadow: 0 0 22px -6px rgba(251, 146, 60, 0.6); }
+  .btn-danger { background: rgba(127, 29, 29, 0.35); border-color: rgba(248, 113, 113, 0.45); color: #fecaca; }
+  .btn-danger:hover { background: rgba(153, 27, 27, 0.65); border-color: rgba(248, 113, 113, 0.85); box-shadow: 0 0 24px -6px rgba(248, 113, 113, 0.6); }
+
+  .incident-card {
+    background: rgba(9, 14, 25, 0.55);
+    border-radius: 14px;
+    transition: border-color 0.6s ease, box-shadow 0.6s ease, background 0.6s ease;
+  }
+  .incident-warn {
+    border-color: rgba(251, 191, 36, 0.45);
+    box-shadow: 0 0 34px -14px rgba(251, 191, 36, 0.4);
+  }
+  .incident-crit {
+    border-color: rgba(248, 113, 113, 0.5);
+    background: rgba(22, 11, 14, 0.45);
+    animation: incidentCrit 2.8s ease-in-out infinite;
+  }
+  @keyframes incidentCrit {
+    0%, 100% { box-shadow: 0 0 32px -14px rgba(248, 113, 113, 0.38); }
+    50% { box-shadow: 0 0 52px -10px rgba(248, 113, 113, 0.6); }
+  }
+
+  .conf-track { height: 6px; border-radius: 4px; background: rgba(148, 197, 230, 0.1); overflow: hidden; }
+  .conf-fill { height: 100%; border-radius: 4px; transition: width 0.9s var(--ease); }
+
+  .ttf-bar { height: 8px; border-radius: 4px; position: relative; overflow: hidden; }
+
+  .thinking-dots span {
+    display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: 50%;
+    background: var(--accent); animation: think 1.2s infinite ease-in-out;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.18s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.36s; }
+  @keyframes think { 0%, 80%, 100% { opacity: 0.2; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+  .think-scan {
+    height: 2px; border-radius: 2px; overflow: hidden; background: rgba(34, 211, 238, 0.1);
+  }
+  .think-scan::after {
+    content: ""; display: block; height: 100%; width: 34%;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scan 1.4s linear infinite;
+  }
+  @keyframes scan { from { transform: translateX(-120%); } to { transform: translateX(340%); } }
+  #thinkingTag { box-shadow: 0 0 22px -8px rgba(34, 211, 238, 0.65); }
+
+  #agentModeTag { box-shadow: 0 0 20px -8px rgba(251, 191, 36, 0.55); }
+  #agentModeTag.chip-ok { box-shadow: 0 0 22px -7px rgba(52, 211, 153, 0.7); }
+
+  #drawerScrim {
+    position: fixed; inset: 0;
+    z-index: 58;
+    background: rgba(2, 5, 10, 0.55);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+  #drawerScrim.open { opacity: 1; pointer-events: auto; }
+
+  #drawer {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: 340px;
+    z-index: 60;
+    transform: translateX(105%);
+    transition: transform 0.45s var(--ease);
+    background: linear-gradient(180deg, rgba(10, 16, 28, 0.98), rgba(6, 10, 18, 0.99));
+    border-left: 1px solid var(--line-strong);
+    box-shadow: -40px 0 80px -24px rgba(0, 0, 0, 0.9);
+  }
+  #drawer.open {
+    transform: translateX(0);
+    box-shadow: -40px 0 80px -24px rgba(0, 0, 0, 0.9), -1px 0 30px -18px rgba(34, 211, 238, 0.6);
+  }
+  #drawerTab {
+    position: fixed;
+    right: 0; top: 50%;
+    transform: translateY(-50%);
+    z-index: 55;
+    writing-mode: vertical-rl;
+    padding: 20px 9px;
+    border-radius: 10px 0 0 10px;
+    border: 1px solid var(--line-strong);
+    border-right: none;
+    background: rgba(10, 16, 28, 0.92);
+    color: var(--dim);
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    cursor: pointer;
+    font-family: "JetBrains Mono", monospace;
+    transition: color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+  }
+  #drawerTab:hover { color: var(--accent); border-color: rgba(34, 211, 238, 0.45); box-shadow: 0 0 22px -6px rgba(34, 211, 238, 0.5); }
+
+  .orbit-wrap { position: relative; }
+  .orbit-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 5%;
+    background: radial-gradient(circle at 50% 56%, rgba(34, 211, 238, 0.1), transparent 62%);
+    filter: blur(10px);
+    animation: ambient 7s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes ambient {
+    0%, 100% { opacity: 0.5; transform: scale(0.99); }
+    50% { opacity: 1; transform: scale(1.02); }
+  }
+  .beam-flow { stroke-dasharray: 6 8; animation: beamDash 1.1s linear infinite; }
+  @keyframes beamDash { to { stroke-dashoffset: -14; } }
+  .station-ping { animation: ping 2.6s cubic-bezier(0, 0, 0.2, 1) infinite; transform-origin: center; }
+  @keyframes ping { 0% { r: 4; opacity: 0.8; } 100% { r: 17; opacity: 0; } }
+  .sat-pulse { animation: satPing 2.8s ease-out infinite; transform-origin: center; }
+  @keyframes satPing { 0% { r: 8; opacity: 0.5; } 70%, 100% { r: 24; opacity: 0; } }
+  .twinkle { animation: twinkle 3.5s ease-in-out infinite; }
+  @keyframes twinkle { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.08; } }
+
+  .pass-track { height: 9px; border-radius: 5px; background: rgba(148, 197, 230, 0.08); overflow: hidden; position: relative; border: 1px solid var(--line); }
+  .pass-on { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, rgba(52, 211, 153, 0.35), rgba(52, 211, 153, 0.15)); box-shadow: inset 0 0 18px rgba(52, 211, 153, 0.2); }
+  .pass-cursor { position: absolute; top: -4px; bottom: -4px; width: 2px; background: #e2e8f0; box-shadow: 0 0 12px rgba(226, 232, 240, 0.95); border-radius: 2px; transition: left 1.2s linear; }
+
+  #toasts { position: fixed; top: 86px; right: 18px; z-index: 70; display: flex; flex-direction: column; gap: 9px; max-width: 350px; }
+  .toast {
+    padding: 11px 15px;
+    border-radius: 11px;
+    font-size: 11.5px;
+    line-height: 1.55;
+    border: 1px solid var(--line-strong);
+    background: rgba(10, 16, 28, 0.96);
+    animation: toastIn 0.45s var(--ease);
+    font-family: "JetBrains Mono", monospace;
+    box-shadow: 0 16px 36px -16px rgba(0, 0, 0, 0.85);
+  }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(26px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+  #boot {
+    position: fixed; inset: 0; z-index: 100;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    transition: opacity 0.8s ease, transform 0.8s var(--ease), filter 0.8s ease;
+  }
+  #boot.hide { opacity: 0; transform: scale(1.04); filter: blur(8px); pointer-events: none; }
+  .boot-mark { position: relative; }
+  .boot-mark::after {
+    content: "";
+    position: absolute;
+    inset: -16px;
+    border-radius: 50%;
+    border: 1px solid rgba(34, 211, 238, 0.14);
+    border-top-color: rgba(34, 211, 238, 0.75);
+    animation: spin 2.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .boot-bar { width: 300px; height: 2px; background: rgba(34, 211, 238, 0.12); border-radius: 2px; overflow: hidden; }
+  .boot-bar-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #67e8f9); animation: bootFill 2s cubic-bezier(0.4, 0, 0.2, 1) forwards; box-shadow: 0 0 14px rgba(34, 211, 238, 0.9); }
+  @keyframes bootFill { to { width: 100%; } }
+
+  .log-line { opacity: 0; animation: logIn 0.4s ease forwards; }
+  @keyframes logIn { to { opacity: 1; } }
+
+  @keyframes riseIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+  .reveal { animation: riseIn 1s var(--ease) both; }
+
+  .appbar::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.4), transparent);
+    pointer-events: none;
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(148, 197, 230, 0.15); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(148, 197, 230, 0.3); }
+
+  .ev-list li { position: relative; padding-left: 14px; }
+  .ev-list li::before { content: "›"; position: absolute; left: 0; color: var(--accent); }
+</style>
+</head>
+<body class="font-display">
+
+<div id="boot">
+  <div class="flex flex-col items-center gap-6">
+    <div class="flex items-center gap-3 boot-mark">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.4">
+        <path d="M12 2l2.4 6.2L21 10l-6.6 1.8L12 18l-2.4-6.2L3 10l6.6-1.8L12 2z" />
+      </svg>
+      <span class="text-xl font-bold tracking-[0.3em] text-cyan-300">AEROPULSE-1</span>
+    </div>
+    <div class="boot-bar"><div class="boot-bar-fill"></div></div>
+    <div id="bootLog" class="mono text-[11px] text-slate-500 h-16 w-80 text-left space-y-1"></div>
+    <div class="mono text-[10px] tracking-[0.3em] text-cyan-500/80 uppercase">Establishing uplink…</div>
+  </div>
+</div>
+
+<div class="bg-grid"></div>
+<div class="bg-vignette"></div>
+<div id="alertGlow"></div>
+
+<div class="relative z-10 flex flex-col min-h-screen">
+
+  <header class="glass appbar reveal rounded-none border-x-0 border-t-0 px-5 md:px-8 py-4 flex flex-wrap items-center gap-x-6 gap-y-3" style="border-radius:0;border-left:none;border-right:none;border-top:none;animation-delay:1.9s;">
+    <div class="flex items-center gap-3">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.5">
+        <path d="M12 2l2.4 6.2L21 10l-6.6 1.8L12 18l-2.4-6.2L3 10l6.6-1.8L12 2z" />
+      </svg>
+      <div>
+        <div class="text-[15px] font-bold tracking-[0.28em] leading-none">AEROPULSE-1</div>
+        <div class="mono text-[9px] tracking-[0.2em] text-slate-500 mt-1">MISSION CONTROL · DETECT → DECIDE → ACT</div>
+      </div>
+    </div>
+
+    <div class="h-8 w-px bg-slate-700/50 hidden md:block"></div>
+
+    <div class="flex items-center gap-4">
+      <div>
+        <div class="panel-label">UTC</div>
+        <div id="utcClock" class="mono text-sm text-slate-200">--:--:--Z</div>
+      </div>
+      <div>
+        <div class="panel-label">Mission</div>
+        <div id="missionClock" class="mono text-sm text-cyan-300">T+00:00:00</div>
+      </div>
+    </div>
+
+    <div id="stateBadge" class="state-badge state-nominal">NOMINAL</div>
+
+    <div class="flex items-center gap-4 ml-auto flex-wrap">
+      <div class="flex items-center gap-2">
+        <span id="wsDot" class="dot dot-dim"></span>
+        <span id="linkState" class="mono text-[11px] tracking-widest text-slate-400">UPLINK …</span>
+      </div>
+      <div>
+        <div class="panel-label" id="passLabel">Next pass</div>
+        <div id="passCountdown" class="mono text-sm text-slate-200">--:--</div>
+      </div>
+      <div class="hidden lg:block">
+        <div class="panel-label">Buffer</div>
+        <div id="bufferDepth" class="mono text-sm text-slate-200">0</div>
+      </div>
+      <span class="chip chip-amber-outline">◉ SIMULATED DATA</span>
+    </div>
+  </header>
+
+  <main class="flex-1 grid gap-5 p-5 md:p-7 reveal" style="grid-template-columns: minmax(310px, 375px) minmax(0, 1fr) minmax(290px, 330px); animation-delay:2.02s;">
+
+    <section class="flex flex-col gap-5">
+      <div class="glass p-5">
+        <div class="flex items-center justify-between mb-4">
+          <span class="panel-label">Telemetry · SIMULATED downlink</span>
+          <span id="teleAge" class="mono text-[10px] text-slate-600">—</span>
+        </div>
+        <div id="charts" class="flex flex-col gap-4"></div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-5 min-w-0">
+      <div class="glass framed p-5 md:p-6 flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <span class="panel-label">Orbit · Karachi ground station (SIMULATED)</span>
+          <span id="orbitPhaseChip" class="chip chip-cyan">—</span>
+        </div>
+        <div class="orbit-wrap flex-1 min-h-[300px]">
+          <svg id="orbitSvg" viewBox="0 0 640 380" preserveAspectRatio="xMidYMid meet" class="w-full h-full">
+            <defs>
+              <radialGradient id="earthGrad" cx="38%" cy="32%" r="75%">
+                <stop offset="0%" stop-color="#123049" />
+                <stop offset="55%" stop-color="#0a1c2e" />
+                <stop offset="100%" stop-color="#050d16" />
+              </radialGradient>
+              <radialGradient id="earthGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="70%" stop-color="rgba(34,211,238,0)" />
+                <stop offset="100%" stop-color="rgba(34,211,238,0.18)" />
+              </radialGradient>
+              <linearGradient id="beamGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="rgba(34,211,238,0.55)" />
+                <stop offset="100%" stop-color="rgba(34,211,238,0.05)" />
+              </linearGradient>
+              <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="3.5" result="b" />
+                <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+
+            <g id="stars"></g>
+
+            <ellipse id="orbitPath" cx="320" cy="196" rx="238" ry="118" fill="none"
+              stroke="rgba(34,211,238,0.28)" stroke-width="1" stroke-dasharray="4 7" />
+
+            <circle cx="320" cy="238" r="96" fill="url(#earthGlow)" />
+            <circle cx="320" cy="238" r="82" fill="url(#earthGrad)" stroke="rgba(34,211,238,0.35)" stroke-width="1" />
+            <ellipse cx="320" cy="238" rx="82" ry="30" fill="none" stroke="rgba(34,211,238,0.08)" stroke-width="1" />
+            <ellipse cx="320" cy="238" rx="82" ry="58" fill="none" stroke="rgba(34,211,238,0.06)" stroke-width="1" />
+            <ellipse cx="320" cy="238" rx="34" ry="82" fill="none" stroke="rgba(34,211,238,0.07)" stroke-width="1" />
+            <ellipse cx="320" cy="238" rx="62" ry="82" fill="none" stroke="rgba(34,211,238,0.05)" stroke-width="1" />
+
+            <g id="stationGroup">
+              <circle id="stationPing" class="station-ping" cx="252" cy="290" r="4" fill="none" stroke="rgba(52,211,153,0.7)" stroke-width="1" />
+              <path d="M246 294 l6 -10 l6 10 z" fill="#34d399" opacity="0.9" />
+              <circle cx="252" cy="288" r="2.2" fill="#34d399" filter="url(#softGlow)" />
+              <text x="232" y="310" fill="#5b7590" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.5">KARACHI GS</text>
+            </g>
+
+            <g id="beamGroup" opacity="0">
+              <polygon id="beamCone" points="0,0 0,0 0,0" fill="url(#beamGrad)" opacity="0.4" />
+              <line id="beamLine" class="beam-flow" x1="0" y1="0" x2="0" y2="0"
+                stroke="rgba(34,211,238,0.85)" stroke-width="1.4" filter="url(#softGlow)" />
+            </g>
+
+            <g id="satGroup" filter="url(#softGlow)">
+              <circle class="sat-pulse" cx="0" cy="0" r="8" fill="none" stroke="rgba(34,211,238,0.5)" stroke-width="0.8" />
+              <rect x="-13" y="-2.2" width="9" height="4.4" rx="1" fill="#164e63" stroke="#22d3ee" stroke-width="0.8" />
+              <rect x="4" y="-2.2" width="9" height="4.4" rx="1" fill="#164e63" stroke="#22d3ee" stroke-width="0.8" />
+              <rect x="-4" y="-4" width="8" height="8" rx="1.4" fill="#0e7490" stroke="#67e8f9" stroke-width="1" />
+              <line x1="0" y1="-4" x2="0" y2="-8" stroke="#67e8f9" stroke-width="0.9" />
+              <circle cx="0" cy="-9" r="1.3" fill="#67e8f9" />
+            </g>
+            <text id="satLabel" fill="#7dd3fc" font-family="JetBrains Mono, monospace" font-size="9.5" letter-spacing="1.5">AEROPULSE-1</text>
+          </svg>
+        </div>
+
+        <div class="mt-3">
+          <div class="flex justify-between mono text-[9px] tracking-[0.18em] text-slate-500 mb-1">
+            <span>AOS · CONTACT</span>
+            <span id="passPhaseText" class="text-slate-400">—</span>
+            <span>LOS · NO CONTACT</span>
+          </div>
+          <div class="pass-track">
+            <div class="pass-on" id="passOnSeg"></div>
+            <div class="pass-cursor" id="passCursor" style="left:0%"></div>
+          </div>
+          <div class="flex justify-between mt-2 mono text-[10px] text-slate-500">
+            <span>onboard buffer: <span id="bufferDepth2" class="text-slate-300">0</span> samples</span>
+            <span>packet backlog drains at AOS · 57600 bps SIMULATED</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-5">
+      <div class="glass p-5">
+        <span class="panel-label">Subsystems</span>
+        <div id="subsystems" class="flex flex-col gap-3 mt-4"></div>
+      </div>
+      <div class="glass p-5">
+        <span class="panel-label">Detectors</span>
+        <div class="mt-4 space-y-2.5 mono text-[10.5px] text-slate-400 leading-relaxed">
+          <div class="flex items-center gap-2"><span class="dot dot-ok"></span>threshold · hard limit bands</div>
+          <div class="flex items-center gap-2"><span class="dot dot-ok"></span>z-score · rolling 120 s window</div>
+          <div class="flex items-center gap-2"><span class="dot dot-ok"></span>isolation forest · multivariate</div>
+          <div class="pt-2 border-t hairline text-slate-500">3 consecutive flagged samples required per detector before an incident opens.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <section class="mx-5 md:mx-7 mb-7 glass framed overflow-hidden reveal" style="animation-delay:2.16s;">
+    <div class="px-5 py-4 border-b hairline flex flex-wrap items-center gap-3">
+      <span class="panel-label">Agent console</span>
+      <span id="thinkingTag" class="chip chip-cyan hidden">
+        <span class="thinking-dots"><span></span><span></span><span></span></span>
+        REASONING
+      </span>
+      <span id="agentModeTag" class="chip chip-warn">AGENT MODE · …</span>
+      <div class="ml-auto flex items-center gap-2">
+        <span class="mono text-[9px] text-slate-600 hidden md:inline">THE AGENT RECOMMENDS · YOU APPROVE</span>
+        <button class="btn" id="reportBtn">Open Report</button>
+      </div>
+    </div>
+
+    <div class="grid gap-5 p-5" style="grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);">
+      <div id="incidentPanel" class="min-h-[200px]">
+        <div id="incidentCard" class="text-slate-500 text-sm mono text-[12px] p-5 border border-dashed rounded-xl" style="border-color:var(--line);">
+          No open incidents. Monitoring SIMULATED telemetry for anomalies…
+        </div>
+      </div>
+
+      <div class="flex flex-col">
+        <div class="panel-label mb-3">Command queue · uplink</div>
+        <div id="commandQueue" class="flex flex-col gap-2 overflow-y-auto pr-1" style="max-height:260px;">
+          <div class="mono text-[11.5px] text-slate-600 p-3 border border-dashed rounded-lg" style="border-color:var(--line);">
+            No commands proposed. When the agent proposes one it waits here until you approve it.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="px-5 py-3 border-t hairline mono text-[9.5px] leading-relaxed text-slate-600">
+      LIMITATIONS · Every number on this screen is produced by a SIMULATED model on one machine — telemetry, RF link, ground passes and faults are synthetic. False alarms are possible; no detector has been tested on real hardware. Agent output may be a scripted fallback when no LLM key is configured. Commands are never executed without explicit operator approval.
+    </div>
+  </section>
+</div>
+
+<button id="drawerTab" title="Operator drawer (D)">OPERATOR · D</button>
+
+<div id="drawerScrim"></div>
+
+<aside id="drawer">
+  <div class="p-5 h-full flex flex-col">
+    <div class="flex items-center justify-between mb-1">
+      <span class="panel-label">Operator drawer</span>
+      <button class="btn" id="drawerClose" style="padding:3px 9px;">✕</button>
+    </div>
+    <div class="mono text-[10px] text-slate-500 mb-5">press D to toggle · ESC to close</div>
+
+    <div class="panel-label mb-2">Inject SIMULATED fault</div>
+    <div class="flex flex-col gap-2">
+      <button class="btn btn-fault text-left" data-fault="battery_overheat">
+        ⚡ battery_overheat
+        <div class="text-[9.5px] text-orange-300/60 mt-0.5 font-normal">cell temp climbs, pack voltage sags · ramp 20 s</div>
+      </button>
+      <button class="btn btn-fault text-left" data-fault="solar_degradation">
+        ☀ solar_degradation
+        <div class="text-[9.5px] text-orange-300/60 mt-0.5 font-normal">array output decays to ~4% of nominal · ramp 20 s</div>
+      </button>
+      <button class="btn btn-fault text-left" data-fault="signal_loss">
+        〰 signal_loss
+        <div class="text-[9.5px] text-orange-300/60 mt-0.5 font-normal">RSSI collapses, frames drop · ramp 20 s</div>
+      </button>
+    </div>
+
+    <div class="mt-5">
+      <div class="panel-label mb-2">Active faults</div>
+      <div id="faultList" class="mono text-[11px] text-slate-500">none</div>
+    </div>
+
+    <div class="mt-auto pt-6">
+      <button class="btn btn-danger w-full" id="resetBtn">⟲ RESET MISSION</button>
+      <div class="mono text-[9.5px] text-slate-600 mt-2 leading-relaxed">
+        Faults are SIMULATED ramps only — no hardware is attached. Reset clears faults, incidents, the command queue and restarts the mission clock at T+00:00:00.
+      </div>
+    </div>
+  </div>
+</aside>
+
+<div id="toasts"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const SENSORS = {
+    battery_temp:    { label: "BATTERY TEMP",     unit: "degC", color: "#fbbf24", dec: 1 },
+    battery_voltage: { label: "BATTERY VOLTAGE",  unit: "V",    color: "#22d3ee", dec: 2 },
+    solar_current:   { label: "SOLAR CURRENT",    unit: "A",    color: "#a78bfa", dec: 3 },
+    signal_dbm:      { label: "SIGNAL STRENGTH",  unit: "dBm",  color: "#38bdf8", dec: 1 },
+  };
+  const SUBSYS_SENSORS = {
+    Power:   ["battery_voltage", "solar_current"],
+    Thermal: ["battery_temp", "bus_temp"],
+    Comms:   ["signal_dbm"],
+  };
+  const SUBSYS_ICONS = {
+    Power: '<path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/>',
+    Thermal: '<path d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/>',
+    Comms: '<path d="M5 12.55a11 11 0 0114.08 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/>',
+  };
+  const SEVERE = {
+    battery_voltage: { op: "lt", limit: 6.10 },
+    battery_temp: { op: "gt", limit: 58.0 },
+    solar_current: { op: "lt", limit: 0.05 },
+    bus_temp: { op: "gt", limit: 58.0 },
+    signal_dbm: { op: "lt", limit: -120.0 },
+  };
+  const RANK = { NOMINAL: 0, WARNING: 1, CRITICAL: 2 };
+
+  const S = {
+    ws: null,
+    config: null,
+    link: { link_state: "-", next_pass_s: 0, pass_remaining_s: 0, deadline_s: 0, buffer_depth: 0, cycle_pos_s: 0 },
+    clock: "T+00:00:00",
+    faults: [],
+    incidents: new Map(),
+    commands: new Map(),
+    timeline: [],
+    latest: null,
+    latestAt: 0,
+    charts: {},
+    lastVals: {},
+    agentMode: "OFFLINE FALLBACK",
+    lastCycle: 0,
+    lastCycleAt: 0,
+    satAngle: 20,
+    state: "NOMINAL",
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  function fmtVal(sensor, v) {
+    if (v === null || v === undefined) return "—";
+    return Number(v).toFixed(SENSORS[sensor] ? SENSORS[sensor].dec : 2);
+  }
+  function fmtMMSS(sec) {
+    sec = Math.max(0, Math.round(sec || 0));
+    return String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+  }
+
+  function toast(kind, text) {
+    const el = document.createElement("div");
+    const color = kind === "crit" ? "border-l-2 border-red-400" : kind === "warn" ? "border-l-2 border-amber-400" : kind === "ok" ? "border-l-2 border-emerald-400" : "border-l-2 border-cyan-400";
+    el.className = "toast " + color;
+    el.textContent = text;
+    $("toasts").appendChild(el);
+    setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .4s"; setTimeout(() => el.remove(), 400); }, 4200);
+  }
+
+  // ---------------------------------------------------------------- charts
+  const glowPlugin = {
+    id: "lineGlow",
+    beforeDatasetDraw(chart, args) {
+      if (args.index !== 0) return;
+      chart.ctx.save();
+      chart.ctx.shadowColor = chart.data.datasets[0].borderColor;
+      chart.ctx.shadowBlur = 9;
+    },
+    afterDatasetDraw(chart, args) {
+      if (args.index === 0) chart.ctx.restore();
+    },
+    afterDatasetsDraw(chart) {
+      const points = chart.getDatasetMeta(0).data;
+      let last = null;
+      for (let i = points.length - 1; i >= 0; i--) {
+        if (!points[i] || points[i].skip) continue;
+        const p = points[i].getProps(["x", "y"], true);
+        if (Number.isFinite(p.x) && Number.isFinite(p.y)) { last = p; break; }
+      }
+      if (!last) return;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.shadowColor = chart.data.datasets[0].borderColor;
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = chart.data.datasets[0].borderColor;
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    },
+  };
+
+  function buildCharts() {
+    const host = $("charts");
+    host.innerHTML = "";
+    for (const [key, meta] of Object.entries(SENSORS)) {
+      const wrap = document.createElement("div");
+      wrap.innerHTML = `
+        <div class="flex items-baseline justify-between mb-1.5">
+          <span class="mono text-[9.5px] tracking-[0.18em] text-slate-500">${meta.label}</span>
+          <span class="mono text-[13px]" style="color:${meta.color}" id="val-${key}">—<span class="text-[9px] text-slate-500 ml-1">${meta.unit}</span></span>
+        </div>
+        <div class="chart-box"><canvas id="chart-${key}"></canvas></div>`;
+      host.appendChild(wrap);
+
+      const canvas = wrap.querySelector("canvas");
+      canvas.style.filter = `drop-shadow(0 0 7px ${meta.color}3a)`;
+      const ctx = canvas.getContext("2d");
+      const grad = ctx.createLinearGradient(0, 0, 0, 96);
+      grad.addColorStop(0, meta.color + "33");
+      grad.addColorStop(1, meta.color + "00");
+
+      S.charts[key] = new Chart(ctx, {
+        type: "line",
+        data: {
+          datasets: [
+            {
+              label: meta.label,
+              data: [],
+              borderColor: meta.color,
+              backgroundColor: grad,
+              borderWidth: 1.4,
+              tension: 0.35,
+              pointRadius: 0,
+              spanGaps: false,
+              fill: true,
+            },
+            {
+              label: "limit",
+              data: [],
+              borderColor: "rgba(248,113,113,0.45)",
+              borderDash: [4, 4],
+              borderWidth: 1,
+              pointRadius: 0,
+              fill: false,
+            },
+          ],
+        },
+        plugins: [glowPlugin],
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 320, easing: "easeOutQuart" },
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "rgba(8,12,22,0.95)",
+              borderColor: "rgba(148,197,230,0.25)",
+              borderWidth: 1,
+              titleFont: { family: "JetBrains Mono", size: 10 },
+              bodyFont: { family: "JetBrains Mono", size: 10 },
+              callbacks: {
+                title: (items) => items.length ? "T+" + fmtMMSS(items[0].parsed.x) : "",
+                label: (item) => item.datasetIndex === 0
+                  ? ` ${fmtVal(key, item.parsed.y)} ${meta.unit}`
+                  : null,
+              },
+              filter: (item) => item.datasetIndex === 0,
+            },
+          },
+          scales: {
+            x: {
+              type: "linear",
+              grid: { color: "rgba(148,197,230,0.05)" },
+              ticks: { color: "#3f5168", font: { family: "JetBrains Mono", size: 8 }, maxTicksLimit: 5, callback: (v) => fmtMMSS(v) },
+              border: { color: "rgba(148,197,230,0.12)" },
+            },
+            y: {
+              grace: "18%",
+              grid: { color: "rgba(148,197,230,0.05)" },
+              ticks: { color: "#3f5168", font: { family: "JetBrains Mono", size: 8 }, maxTicksLimit: 4, callback: (v) => Number(v).toFixed(meta.dec === 3 ? 2 : 1) },
+              border: { color: "rgba(148,197,230,0.12)" },
+            },
+          },
+        },
+      });
+    }
+  }
+
+  function updateCharts() {
+    const win = S.timeline.slice(-180);
+    for (const key of Object.keys(SENSORS)) {
+      const chart = S.charts[key];
+      if (!chart) continue;
+      chart.data.datasets[0].data = win
+        .filter((p) => p.values)
+        .map((p) => ({ x: p.t, y: p.values[key] }));
+      const th = S.config && S.config.thresholds[key];
+      if (th) {
+        chart.data.datasets[1].data = win.length
+          ? [{ x: win[0].t, y: th.limit }, { x: win[win.length - 1].t, y: th.limit }]
+          : [];
+      }
+      chart.update();
+      const last = [...win].reverse().find((p) => p.values);
+      const el = $("val-" + key);
+      if (el) {
+        const txt = last ? fmtVal(key, last.values[key]) : "—";
+        el.innerHTML = `${txt}<span class="text-[9px] text-slate-500 ml-1">${SENSORS[key].unit}</span>`;
+        if (S.lastVals[key] !== undefined && S.lastVals[key] !== txt) {
+          el.classList.remove("val-flash");
+          void el.offsetWidth;
+          el.classList.add("val-flash");
+        }
+        S.lastVals[key] = txt;
+      }
+    }
+  }
+
+  function setTimeline(t, values) {
+    let point = null;
+    for (let i = S.timeline.length - 1; i >= 0; i--) {
+      if (Math.abs(S.timeline[i].t - t) < 0.51) { point = S.timeline[i]; break; }
+      if (S.timeline[i].t < t - 0.51) break;
+    }
+    if (!point) {
+      point = { t, values: null };
+      S.timeline.push(point);
+      S.timeline.sort((a, b) => a.t - b.t);
+    }
+    if (values) {
+      point.values = values;
+      S.latest = values;
+      S.latestAt = performance.now();
+    }
+    if (S.timeline.length > 600) S.timeline.splice(0, S.timeline.length - 600);
+  }
+
+  function pushGap(t) {
+    if (!S.timeline.length || t - S.timeline[S.timeline.length - 1].t > 0.51) {
+      S.timeline.push({ t, values: null });
+      if (S.timeline.length > 600) S.timeline.shift();
+    }
+  }
+
+  // ---------------------------------------------------------------- subsystems
+  function sensorStatus(sensor) {
+    if (!S.latest || S.latest[sensor] === undefined) return "NOMINAL";
+    if (!S.config || !S.config.thresholds[sensor]) return "NOMINAL";
+    const { op, limit } = S.config.thresholds[sensor];
+    const v = S.latest[sensor];
+    const crossed = op === "lt" ? v < limit : v > limit;
+    if (!crossed) return "NOMINAL";
+    const sev = SEVERE[sensor];
+    if (sev && (sev.op === "lt" ? v < sev.limit : v > sev.limit)) return "CRITICAL";
+    return "WARNING";
+  }
+
+  function subsystemStatus(name) {
+    let worst = "NOMINAL";
+    let detail = "within nominal bands";
+    for (const sensor of SUBSYS_SENSORS[name]) {
+      const st = sensorStatus(sensor);
+      if (RANK[st] > RANK[worst]) {
+        worst = st;
+        const { op, limit } = (S.config && S.config.thresholds[sensor]) || { op: "gt", limit: 0 };
+        const v = S.latest ? fmtVal(sensor, S.latest[sensor]) : "—";
+        detail = `${sensor.replace("_", " ")} ${v} ${SENSORS[sensor] ? SENSORS[sensor].unit : ""} ${op === "lt" ? "<" : ">"} ${limit}`;
+      }
+    }
+    for (const inc of S.incidents.values()) {
+      if (inc.status !== "OPEN" || inc.subsystem !== name) continue;
+      const mapped = inc.severity === "CRITICAL" || inc.severity === "HIGH" ? "CRITICAL" : "WARNING";
+      if (RANK[mapped] > RANK[worst]) {
+        worst = mapped;
+        detail = `${inc.id} open · ${inc.severity.toLowerCase()} · ${inc.anomaly_count} detections`;
+      }
+    }
+    return { status: worst, detail };
+  }
+
+  function renderSubsystems() {
+    const host = $("subsystems");
+    if (!host.dataset.ready) {
+      host.innerHTML = Object.keys(SUBSYS_SENSORS).map((name) => `
+        <div class="sub-card" id="sub-${name}">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-2.5">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:var(--dim)">
+                ${SUBSYS_ICONS[name]}
+              </svg>
+              <span class="text-[13px] font-semibold tracking-wider">${name.toUpperCase()}</span>
+            </div>
+            <span class="chip" id="subchip-${name}">—</span>
+          </div>
+          <div class="mono text-[10px] text-slate-500 mt-2" id="subdetail-${name}">acquiring telemetry…</div>
+        </div>`).join("");
+      host.dataset.ready = "1";
+    }
+    for (const name of Object.keys(SUBSYS_SENSORS)) {
+      const { status, detail } = subsystemStatus(name);
+      const card = $("sub-" + name);
+      const chip = $("subchip-" + name);
+      card.classList.toggle("warn", status === "WARNING");
+      card.classList.toggle("crit", status === "CRITICAL");
+      chip.className = "chip " + (status === "CRITICAL" ? "chip-crit" : status === "WARNING" ? "chip-warn" : "chip-ok");
+      chip.textContent = status;
+      $("subdetail-" + name).textContent = detail;
+    }
+  }
+
+  function overallState() {
+    let worst = "NOMINAL";
+    for (const name of Object.keys(SUBSYS_SENSORS)) {
+      const { status } = subsystemStatus(name);
+      if (RANK[status] > RANK[worst]) worst = status;
+    }
+    if (S.faults.length && worst === "NOMINAL") worst = "WARNING";
+    return worst;
+  }
+
+  function renderState() {
+    const st = overallState();
+    if (st !== S.state) {
+      S.state = st;
+      document.body.classList.remove("state-warning", "state-critical");
+      if (st !== "NOMINAL") document.body.classList.add("state-" + st.toLowerCase());
+    }
+    const badge = $("stateBadge");
+    badge.className = "state-badge state-" + st.toLowerCase();
+    badge.textContent = st;
+  }
+
+  // ---------------------------------------------------------------- link + orbit
+  function renderLink() {
+    const l = S.link;
+    const connected = l.link_state === "CONNECTED";
+    $("linkState").textContent = connected ? "LINK CONNECTED" : "NO CONTACT";
+    $("linkState").style.color = connected ? "var(--ok)" : "var(--crit)";
+    $("linkState").style.textShadow = connected
+      ? "0 0 14px rgba(52,211,153,0.75)"
+      : "0 0 14px rgba(248,113,113,0.7)";
+    $("wsDot").className = "dot " + (connected ? "dot-ok" : "dot-crit");
+    if (connected) {
+      $("passLabel").textContent = "LOS in";
+      $("passCountdown").textContent = fmtMMSS(l.pass_remaining_s);
+      $("passCountdown").style.color = "var(--ok)";
+    } else {
+      $("passLabel").textContent = "Next pass in";
+      $("passCountdown").textContent = fmtMMSS(l.next_pass_s);
+      $("passCountdown").style.color = "var(--warn)";
+    }
+    $("bufferDepth").textContent = l.buffer_depth;
+    $("bufferDepth2").textContent = l.buffer_depth;
+    $("missionClock").textContent = S.clock;
+
+    const cycleLen = (S.config ? S.config.pass_on_s + S.config.pass_off_s : 120) || 120;
+    const onFrac = (S.config ? S.config.pass_on_s : 60) / cycleLen;
+    $("passOnSeg").style.width = onFrac * 100 + "%";
+    $("passCursor").style.left = clamp((l.cycle_pos_s / cycleLen) * 100, 0, 100) + "%";
+    $("passPhaseText").textContent = connected
+      ? `CONNECTED · ${fmtMMSS(l.pass_remaining_s)} left`
+      : `GAP · AOS in ${fmtMMSS(l.next_pass_s)}`;
+    $("orbitPhaseChip").textContent = connected ? "IN VIEW" : "BEYOND HORIZON";
+    $("orbitPhaseChip").className = "chip " + (connected ? "chip-ok" : "chip-cyan");
+    $("stationPing").style.opacity = connected ? "1" : "0.25";
+  }
+
+  const ORBIT = { cx: 320, cy: 196, rx: 238, ry: 118 };
+  const STATION = { x: 252, y: 288 };
+
+  function orbitAngleForCycle(cycle, cycleLen, onFrac) {
+    const onLen = cycleLen * onFrac;
+    if (cycle < onLen) return 20 + (cycle / onLen) * 140;
+    const offLen = cycleLen - onLen;
+    return 160 + ((cycle - onLen) / offLen) * 220;
+  }
+
+  function placeSatellite(angleDeg) {
+    const a = (angleDeg * Math.PI) / 180;
+    const x = ORBIT.cx + ORBIT.rx * Math.cos(a);
+    const y = ORBIT.cy + ORBIT.ry * Math.sin(a);
+    $("satGroup").setAttribute("transform", `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+    const behind = Math.sin(a) < -0.15;
+    $("satGroup").style.opacity = behind ? "0.35" : "1";
+    $("satLabel").setAttribute("x", (x + 16).toFixed(1));
+    $("satLabel").setAttribute("y", (y - 10).toFixed(1));
+    $("satLabel").style.opacity = behind ? "0.3" : "0.85";
+    return { x, y };
+  }
+
+  function drawBeam(from, on) {
+    const g = $("beamGroup");
+    if (!on) { g.setAttribute("opacity", "0"); return; }
+    g.setAttribute("opacity", "1");
+    const dx = STATION.x - from.x, dy = STATION.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const px = (-dy / len) * 7, py = (dx / len) * 7;
+    $("beamLine").setAttribute("x1", from.x);
+    $("beamLine").setAttribute("y1", from.y);
+    $("beamLine").setAttribute("x2", STATION.x);
+    $("beamLine").setAttribute("y2", STATION.y);
+    $("beamCone").setAttribute("points",
+      `${from.x + px},${from.y + py} ${from.x - px},${from.y - py} ${STATION.x},${STATION.y}`);
+  }
+
+  function seedStars() {
+    const g = $("stars");
+    let html = "";
+    for (let i = 0; i < 46; i++) {
+      const x = (i * 137.5) % 640;
+      const y = (i * 71.3) % 380;
+      if (Math.hypot(x - 320, y - 238) < 100) continue;
+      const r = 0.6 + ((i * 13) % 10) / 12;
+      html += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${r.toFixed(1)}" fill="#94c5e6" class="${i % 5 === 0 ? "twinkle" : ""}" opacity="0.4" style="${i % 5 === 0 ? "" : "animation-delay:" + ((i % 7) * 0.5) + "s"}"/>`;
+    }
+    g.innerHTML = html;
+  }
+
+  function orbitFrame(now) {
+    const cycleLen = (S.config ? S.config.pass_on_s + S.config.pass_off_s : 120) || 120;
+    const onFrac = (S.config ? S.config.pass_on_s : 60) / cycleLen;
+    if (S.lastCycleAt) {
+      const dt = (now - S.lastCycleAt) / 1000;
+      if (dt > 0 && dt < 5) S.lastCycle = (S.lastCycle + dt) % cycleLen;
+    }
+    S.lastCycleAt = now;
+    const target = S.link.cycle_pos_s;
+    let diff = target - S.lastCycle;
+    if (Math.abs(diff) > cycleLen / 2) diff -= Math.sign(diff) * cycleLen;
+    S.lastCycle += diff * 0.08;
+
+    const angle = orbitAngleForCycle(S.lastCycle, cycleLen, onFrac);
+    S.satAngle += (angle - S.satAngle) * 0.1;
+    const pos = placeSatellite(S.satAngle);
+    drawBeam(pos, S.link.link_state === "CONNECTED");
+    requestAnimationFrame(orbitFrame);
+  }
+
+  // ---------------------------------------------------------------- incidents + commands
+  function sevChip(sev) {
+    const s = String(sev || "").toUpperCase();
+    const cls = s === "CRITICAL" ? "chip-crit" : s === "HIGH" ? "chip-crit" : s === "MEDIUM" ? "chip-warn" : "chip-ok";
+    return `<span class="chip ${cls}">${esc(s)}</span>`;
+  }
+
+  function renderIncidents() {
+    const open = [...S.incidents.values()].filter((i) => i.status === "OPEN");
+    open.sort((a, b) => b.first_seen - a.first_seen);
+    const card = $("incidentCard");
+    const thinking = open.some((i) => i.agent_status === "ANALYZING");
+    $("thinkingTag").classList.toggle("hidden", !thinking);
+
+    if (!open.length) {
+      const resolved = [...S.incidents.values()].filter((i) => i.status === "RESOLVED");
+      resolved.sort((a, b) => b.last_seen - a.last_seen);
+      if (resolved.length) {
+        const r = resolved[0];
+        card.className = "incident-card border mono text-[11.5px] text-slate-500 p-5 opacity-70";
+        card.style.borderColor = "var(--line)";
+        card.style.boxShadow = "none";
+        card.style.background = "";
+        card.innerHTML = `Last incident ${esc(r.id)} (${esc(r.subsystem)}) resolved at ${esc(r.last_seen_at)}. System nominal.`;
+      } else {
+        card.className = "mono text-[12px] text-slate-500 p-5 border border-dashed rounded-xl";
+        card.style.borderColor = "var(--line)";
+        card.style.boxShadow = "none";
+        card.style.background = "";
+        card.textContent = "No open incidents. Monitoring SIMULATED telemetry for anomalies…";
+      }
+      return;
+    }
+
+    const inc = open[0];
+    const a = inc.analysis;
+    const analyzing = inc.agent_status === "ANALYZING";
+    const severity = a ? a.severity : inc.severity;
+    const criticalish = severity === "CRITICAL" || severity === "HIGH";
+    card.className = "incident-card border p-5 " + (criticalish ? "incident-crit" : "incident-warn");
+    card.style.borderColor = "";
+    card.style.boxShadow = "";
+    card.style.background = "";
+
+    const dets = Object.entries(inc.detectors || {})
+      .map(([s, d]) => `<span class="chip" style="font-size:9px;">${esc(s)} · ${d.join("+")}</span>`)
+      .join(" ");
+
+    const confidence = a ? a.confidence : inc.confidence;
+    const confColor = criticalish ? "#f87171" : "#fbbf24";
+    const evidence = (a && a.evidence) || inc.evidence || [];
+
+    let timing = "";
+    if (a) {
+      const ttfS = a.time_to_failure_min * 60;
+      const deadline = a.response_deadline_s;
+      const max = Math.max(ttfS, deadline, 1);
+      const ok = a.can_ground_respond_in_time;
+      timing = `
+        <div class="mt-3 pt-3 border-t" style="border-color:var(--line)">
+          <div class="grid gap-3" style="grid-template-columns: 1fr 1fr;">
+            <div>
+              <div class="panel-label">Est. time to failure</div>
+              <div class="mono text-[15px] ${criticalish ? "text-red-300" : "text-amber-300"}">${a.time_to_failure_min} min <span class="text-[9px] text-slate-500">(${esc(a.ttf_method)})</span></div>
+              <div class="ttf-bar mt-1.5" style="background:rgba(148,197,230,0.08)">
+                <div style="width:${clamp((ttfS / max) * 100, 3, 100)}%;height:100%;background:${confColor};opacity:.75"></div>
+              </div>
+            </div>
+            <div>
+              <div class="panel-label">Response deadline</div>
+              <div class="mono text-[15px] text-cyan-300">${fmtMMSS(deadline)} <span class="text-[9px] text-slate-500">to next usable pass</span></div>
+              <div class="ttf-bar mt-1.5" style="background:rgba(148,197,230,0.08)">
+                <div style="width:${clamp((deadline / max) * 100, 3, 100)}%;height:100%;background:#22d3ee;opacity:.75"></div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-2.5 chip ${ok ? "chip-ok" : "chip-crit"}">
+            ${ok ? "✓ ground can respond before failure" : "✕ ground cannot respond — onboard safe mode proposed"}
+          </div>
+        </div>`;
+    }
+
+    card.innerHTML = `
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="mono text-[12px] font-semibold text-slate-100">${esc(inc.id)}</span>
+        <span class="chip chip-cyan">${esc(inc.subsystem)}</span>
+        ${sevChip(severity)}
+        <span class="mono text-[9.5px] text-slate-500 ml-auto">${esc(inc.first_seen_at)} → ${esc(inc.last_seen_at)} · ${inc.anomaly_count} detections</span>
+      </div>
+      ${analyzing ? `
+        <div class="mt-3">
+          <div class="mono text-[11px] text-cyan-300 mb-1.5">Agent is reasoning — correlating sensors, link windows and playbooks…</div>
+          <div class="think-scan"></div>
+        </div>` : ""}
+      ${a ? `
+        <div class="mt-3 text-[13.5px] leading-relaxed text-slate-200">${esc(a.plain_explanation)}</div>
+        <div class="mt-2 mono text-[10.5px] text-slate-500 leading-relaxed">${esc(a.root_cause)}</div>
+        <div class="mt-3 p-3 rounded-lg border-l-2" style="border-color:var(--accent);background:rgba(34,211,238,0.05)">
+          <div class="panel-label mb-1">Recommended action · human approval required</div>
+          <div class="text-[12.5px] text-slate-200 leading-relaxed">${esc(a.recommendation)}</div>
+          <div class="mono text-[10px] text-cyan-400/80 mt-1.5">proposed command: ${esc(a.proposed_command)}</div>
+        </div>
+        <div class="mt-3">
+          <div class="flex items-center justify-between mb-1">
+            <span class="panel-label">Confidence</span>
+            <span class="mono text-[11px]" style="color:${confColor}">${Math.round(confidence * 100)}%</span>
+          </div>
+          <div class="conf-track">
+            <div class="conf-fill" style="width:${confidence * 100}%;background:linear-gradient(90deg,${confColor}88,${confColor})"></div>
+          </div>
+        </div>
+        ${timing}
+        <div class="mt-3">
+          <div class="panel-label mb-1.5">Evidence</div>
+          <ul class="ev-list mono text-[10.5px] text-slate-400 space-y-1 leading-relaxed">
+            ${evidence.map((e) => `<li>${esc(e)}</li>`).join("")}
+          </ul>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-1.5">${dets}</div>
+      ` : `
+        <div class="mt-3 mono text-[11.5px] text-slate-400">
+          ${analyzing ? "Analysis in progress…" : "Agent status: " + esc(inc.agent_status) + " — analysis pending."}
+        </div>
+        <div class="mt-3 flex flex-wrap gap-1.5">${dets}</div>
+      `}
+    `;
+  }
+
+  function cmdChip(status) {
+    const map = {
+      PENDING_APPROVAL: ["chip-warn", "PENDING APPROVAL"],
+      QUEUED_FOR_PASS: ["chip-cyan", "QUEUED FOR PASS"],
+      UPLINKED: ["chip-ok", "UPLINKED"],
+    };
+    const [cls, label] = map[status] || ["", status];
+    return `<span class="chip ${cls}">${label}</span>`;
+  }
+
+  function renderCommands() {
+    const host = $("commandQueue");
+    const list = [...S.commands.values()].sort((a, b) => (a.id > b.id ? 1 : -1));
+    if (!list.length) {
+      host.innerHTML = `<div class="mono text-[11.5px] text-slate-600 p-3 border border-dashed rounded-lg" style="border-color:var(--line);">
+        No commands proposed. When the agent proposes one it waits here until you approve it.</div>`;
+      return;
+    }
+    host.innerHTML = list.map((c) => `
+      <div class="p-3 rounded-lg border" style="border-color:var(--line);background:rgba(9,14,25,0.55);">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="mono text-[11px] text-slate-300">${esc(c.id)}</span>
+          <span class="mono text-[11px] font-semibold text-cyan-300">${esc(c.name)}</span>
+          <span class="ml-auto">${cmdChip(c.status)}</span>
+        </div>
+        <div class="mono text-[9.5px] text-slate-500 mt-1">incident ${esc(c.incident_id)} · ${esc(c.subsystem)} · created ${esc(c.created_at)}${c.approved_at ? " · approved " + esc(c.approved_at) : ""}${c.uplinked_at ? " · uplinked " + esc(c.uplinked_at) : ""}</div>
+        <div class="text-[11.5px] text-slate-400 mt-1.5 leading-relaxed">${esc(c.rationale)}</div>
+        ${c.status === "PENDING_APPROVAL" ? `
+          <div class="mt-2.5 flex items-center gap-2">
+            <button class="btn btn-approve" data-approve="${esc(c.id)}">✓ APPROVE UPLINK</button>
+            <span class="mono text-[9px] text-slate-600">waits for a contact window</span>
+          </div>` : ""}
+      </div>`).join("");
+  }
+
+  function setAgentMode(mode) {
+    if (!mode) return;
+    S.agentMode = mode;
+    const tag = $("agentModeTag");
+    if (String(mode).toUpperCase().includes("FALLBACK")) {
+      tag.className = "chip chip-warn";
+      tag.textContent = "AGENT MODE · OFFLINE FALLBACK";
+      tag.title = "No LLM API key configured — the scripted playbook agent is running.";
+    } else {
+      tag.className = "chip chip-ok";
+      tag.textContent = "AGENT MODE · LIVE LLM";
+      tag.title = mode;
+    }
+  }
+
+  // ---------------------------------------------------------------- socket
+  function handle(msg) {
+    switch (msg.type) {
+      case "snapshot": {
+        S.config = msg.config;
+        S.clock = msg.clock;
+        S.link = msg.link;
+        S.faults = msg.active_faults || [];
+        S.timeline = (msg.history || []).map((h) => ({ t: h.t, values: h.values }));
+        S.incidents = new Map((msg.incidents || []).map((i) => [i.id, i]));
+        S.commands = new Map((msg.commands || []).map((c) => [c.id, c]));
+        const last = [...S.timeline].reverse().find((p) => p.values);
+        if (last) { S.latest = last.values; S.latestAt = performance.now(); }
+        setAgentMode(msg.agent_mode);
+        renderFaults(); renderLink(); updateCharts(); renderSubsystems(); renderState(); renderIncidents(); renderCommands();
+        break;
+      }
+      case "link": {
+        S.link = {
+          link_state: msg.link_state,
+          next_pass_s: msg.next_pass_s,
+          pass_remaining_s: msg.pass_remaining_s,
+          deadline_s: msg.deadline_s,
+          buffer_depth: msg.buffer_depth,
+          cycle_pos_s: msg.cycle_pos_s,
+        };
+        S.clock = msg.clock;
+        if (msg.link_state !== "CONNECTED") pushGap(msg.mission_t);
+        S.lastCycle = msg.cycle_pos_s;
+        renderLink();
+        break;
+      }
+      case "telemetry": {
+        setTimeline(msg.t, msg.values);
+        $("teleAge").textContent = "live · T+" + fmtMMSS(msg.t);
+        updateCharts(); renderSubsystems(); renderState();
+        break;
+      }
+      case "burst": {
+        for (const r of msg.readings || []) setTimeline(r.t, r.values);
+        toast("ok", `AOS burst — ${msg.count} buffered SIMULATED samples recovered from onboard storage`);
+        updateCharts(); renderSubsystems(); renderState();
+        break;
+      }
+      case "incident_new": {
+        S.incidents.set(msg.incident.id, msg.incident);
+        toast("crit", `NEW INCIDENT ${msg.incident.id} · ${msg.incident.subsystem} · severity ${msg.incident.severity}`);
+        renderIncidents(); renderSubsystems(); renderState();
+        break;
+      }
+      case "incident_update": {
+        S.incidents.set(msg.incident.id, msg.incident);
+        renderIncidents(); renderSubsystems(); renderState();
+        break;
+      }
+      case "incident_resolved": {
+        S.incidents.set(msg.incident.id, msg.incident);
+        toast("ok", `Incident ${msg.incident.id} resolved — 10 consecutive clean batches`);
+        renderIncidents(); renderSubsystems(); renderState();
+        break;
+      }
+      case "agent": {
+        const inc = S.incidents.get(msg.incident_id);
+        if (inc) { inc.analysis = msg.analysis; inc.agent_status = "DONE"; }
+        setAgentMode(msg.analysis.agent_mode);
+        toast("info", `agent (${msg.analysis.agent_mode}) · ${msg.incident_id}: ttf ${msg.analysis.time_to_failure_min} min, ground-respond=${msg.analysis.can_ground_respond_in_time}`);
+        renderIncidents();
+        break;
+      }
+      case "command": {
+        S.commands.set(msg.command.id, msg.command);
+        if (msg.command.status === "QUEUED_FOR_PASS") {
+          toast("warn", `${msg.command.id} approved — queued for the next contact window`);
+        } else if (msg.command.status === "UPLINKED") {
+          toast("ok", `${msg.command.id} UPLINKED during pass (SIMULATED)`);
+        }
+        renderCommands();
+        break;
+      }
+      case "fault_injected": {
+        S.faults = msg.active || [];
+        renderFaults();
+        toast("warn", `SIMULATED fault armed: ${msg.fault} — ${msg.note}`);
+        renderState();
+        break;
+      }
+      case "reset": {
+        S.timeline = []; S.incidents = new Map(); S.commands = new Map(); S.faults = [];
+        S.latest = null;
+        S.lastVals = {};
+        for (const key of Object.keys(SENSORS)) {
+          S.charts[key].data.datasets[0].data = [];
+          S.charts[key].data.datasets[1].data = [];
+          S.charts[key].update();
+        }
+        renderFaults(); renderIncidents(); renderCommands(); renderSubsystems(); renderState();
+        $("teleAge").textContent = "—";
+        toast("info", "Mission state reset (SIMULATED)");
+        break;
+      }
+      case "error": toast("crit", "backend error: " + msg.message); break;
+      default: break;
+    }
+  }
+
+  function renderFaults() {
+    $("faultList").innerHTML = S.faults.length
+      ? S.faults.map((f) => `<div class="chip chip-warn mb-1">${esc(f)}</div>`).join("")
+      : "none";
+  }
+
+  function connect() {
+    const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    S.ws = ws;
+    ws.onopen = () => { $("wsDot").className = "dot dot-ok"; };
+    ws.onclose = () => {
+      $("wsDot").className = "dot dot-crit";
+      $("linkState").textContent = "UPLINK LOST — RETRYING";
+      setTimeout(connect, 2000);
+    };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (ev) => {
+      try { handle(JSON.parse(ev.data)); } catch (e) { console.error(e); }
+    };
+  }
+
+  // ---------------------------------------------------------------- controls
+  document.addEventListener("click", async (e) => {
+    const t = e.target.closest("[data-fault],[data-approve]");
+    if (!t) return;
+    if (t.dataset.fault) {
+      t.disabled = true;
+      try {
+        const r = await fetch("/inject-fault", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ fault: t.dataset.fault }),
+        });
+        const data = await r.json();
+        if (data.ok) S.faults = data.active || S.faults;
+        renderFaults();
+      } finally { t.disabled = false; }
+    } else if (t.dataset.approve) {
+      t.disabled = true;
+      try {
+        const r = await fetch("/approve/" + t.dataset.approve, { method: "POST" });
+        if (!r.ok) toast("crit", "approval rejected: command is no longer pending");
+      } finally { t.disabled = false; }
+    }
+  });
+
+  $("reportBtn").addEventListener("click", () => window.open("/report", "_blank"));
+  $("resetBtn").addEventListener("click", () => fetch("/reset", { method: "POST" }));
+
+  function toggleDrawer(force) {
+    const drawer = $("drawer");
+    const open = typeof force === "boolean" ? force : !drawer.classList.contains("open");
+    drawer.classList.toggle("open", open);
+    $("drawerScrim").classList.toggle("open", open);
+    $("drawerTab").style.opacity = open ? "0" : "1";
+    $("drawerTab").style.pointerEvents = open ? "none" : "auto";
+  }
+
+  $("drawerTab").addEventListener("click", () => toggleDrawer());
+  $("drawerClose").addEventListener("click", () => toggleDrawer(false));
+  $("drawerScrim").addEventListener("click", () => toggleDrawer(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("input,textarea")) return;
+    if (e.key === "d" || e.key === "D") toggleDrawer();
+    if (e.key === "Escape") toggleDrawer(false);
+  });
+
+  // ---------------------------------------------------------------- boot
+  const bootLines = [
+    "› power-on self test ............ OK",
+    "› opening websocket /ws .........",
+    "› loading SIMULATED ephemeris ...",
+    "› Karachi GS schedule ........... OK",
+    "› detectors: threshold/zscore/iforest armed",
+    "› uplink established — welcome, operator",
+  ];
+  bootLines.forEach((line, i) => {
+    const el = document.createElement("div");
+    el.className = "log-line";
+    el.style.animationDelay = 0.25 + i * 0.3 + "s";
+    el.textContent = line;
+    if (i >= 1 && i <= 2) el.style.color = "#67e8f9";
+    $("bootLog").appendChild(el);
+  });
+
+  setInterval(() => {
+    const now = new Date();
+    $("utcClock").textContent =
+      String(now.getUTCHours()).padStart(2, "0") + ":" +
+      String(now.getUTCMinutes()).padStart(2, "0") + ":" +
+      String(now.getUTCSeconds()).padStart(2, "0") + "Z";
+  }, 1000);
+
+  setInterval(() => {
+    if (S.latestAt && performance.now() - S.latestAt > 3000 && $("teleAge").textContent.startsWith("live")) {
+      $("teleAge").textContent = "stale · awaiting downlink";
+    }
+  }, 1500);
+
+  seedStars();
+  buildCharts();
+  renderSubsystems();
+  connect();
+  requestAnimationFrame(orbitFrame);
+
+  setTimeout(() => {
+    $("boot").classList.add("hide");
+    setTimeout(() => $("boot").remove(), 600);
+  }, 2000);
+})();
+</script>
+</body>
+</html>

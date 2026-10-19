@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment secrets (keep examples)
+.env
+.env.*
+!.env.example
+
+# Logs / temp artifacts
+*.log
+*.temp
+
+# Node (belt-and-suspenders; frontend/.gitignore also covers this)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
