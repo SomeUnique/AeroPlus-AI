@@ -158,6 +158,35 @@ cd frontend && npm install && npm run dev     # http://localhost:3000
 Run only one backend on port 8000 at a time, or change the port and set
 `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_WS_URL`.
 
+## Deploy the UI to GitHub Pages
+
+The UI is a client-only app, so it can be exported as static files and hosted on
+GitHub Pages. **The backend cannot run on Pages** - Pages only serves static
+files. Without a reachable backend the UI still loads and shows the
+`connecting` / `reconnecting` banner, but live telemetry is unavailable
+(`SIMULATED` backend data does not appear).
+
+The workflow `.github/workflows/deploy-pages.yml` builds and publishes
+`frontend/out` on every push to `main` that touches `frontend/`.
+
+1. In the repository: **Settings -> Pages -> Build and deployment -> Source =
+   GitHub Actions**.
+2. (Optional) To point the UI at a deployed backend, add repository variables
+   **Settings -> Secrets and variables -> Actions -> Variables**:
+   - `NEXT_PUBLIC_API_URL` e.g. `https://api.example.com`
+   - `NEXT_PUBLIC_WS_URL` e.g. `wss://api.example.com/ws`
+
+   Leave them unset to keep the localhost defaults from `src/lib/config.ts`.
+3. The site is served at `https://<user>.github.io/<repo>/`. The workflow sets
+   `NEXT_PUBLIC_BASE_PATH=/<repo>` to match; update that value if the repository
+   is renamed.
+
+Local static export check:
+
+```bash
+cd frontend && NEXT_PUBLIC_BASE_PATH=/AeroPlus-AI npm run build   # writes out/
+```
+
 ## Limitations
 
 - **False alarms are possible**; nothing has been tested on real hardware.
