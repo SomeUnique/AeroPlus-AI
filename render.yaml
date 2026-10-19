@@ -1,0 +1,31 @@
+# Render blueprint for the AeroPulse AI backend (FastAPI + WebSocket).
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file and creates the service below. Or create a Web Service manually with
+# the same settings (Root Directory = backend, Start Command = the Procfile line).
+#
+# Free tier note: Render free web services spin down after ~15 min idle, so the
+# first request after a pause is slow. All telemetry is SIMULATED.
+
+services:
+  - type: web
+    name: aeropulse-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      # Allow the GitHub Pages UI to call this API. Update if the Pages URL
+      # differs (e.g. a custom domain).
+      - key: AEROPULSE_CORS_ORIGINS
+        value: "https://someunique.github.io,http://localhost:3000,http://127.0.0.1:3000"
+      # Optional: set an LLM provider key to enable the live agent instead of the
+      # OFFLINE FALLBACK. Leave unset to run the scripted fallback.
+      # - key: AEROPULSE_LLM_PROVIDER
+      #   sync: false
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false

@@ -187,6 +187,28 @@ Local static export check:
 cd frontend && NEXT_PUBLIC_BASE_PATH=/AeroPlus-AI npm run build   # writes out/
 ```
 
+## Deploy the backend (Render, free tier)
+
+GitHub Pages cannot run the FastAPI/WebSocket backend, so host it separately.
+`render.yaml` in the repo root is a ready Render blueprint (Root Directory =
+`backend`, start command = `uvicorn app.main:app --host 0.0.0.0 --port $PORT`).
+
+1. Render dashboard -> **New -> Blueprint** -> pick this repo. Render creates the
+   `aeropulse-backend` web service from `render.yaml`.
+   (Manual alternative: **New -> Web Service**, Root Directory `backend`, Build
+   `pip install -r requirements.txt`, Start
+   `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.)
+2. After it deploys, note the service URL, e.g.
+   `https://aeropulse-backend.onrender.com`.
+3. Wire the UI to it with GitHub repository variables (see the Pages section
+   above):
+   - `NEXT_PUBLIC_API_URL` = `https://aeropulse-backend.onrender.com`
+   - `NEXT_PUBLIC_WS_URL` = `wss://aeropulse-backend.onrender.com/ws`
+4. Re-run the Pages workflow so the UI is rebuilt with those URLs.
+
+All backend data remains **SIMULATED**. On the free tier the service sleeps after
+~15 min idle, so the first request can take up to a minute to wake.
+
 ## Limitations
 
 - **False alarms are possible**; nothing has been tested on real hardware.
