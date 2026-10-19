@@ -193,8 +193,11 @@ GitHub Pages cannot run the FastAPI/WebSocket backend, so host it separately.
 `render.yaml` in the repo root is a ready Render blueprint (Root Directory =
 `backend`, start command = `uvicorn app.main:app --host 0.0.0.0 --port $PORT`).
 
-1. Render dashboard -> **New -> Blueprint** -> pick this repo. Render creates the
-   `aeropulse-backend` web service from `render.yaml`.
+1. One-click: open
+   `https://render.com/deploy?repo=https://github.com/SomeUnique/AeroPlus-AI`
+   and sign in to Render. It reads `render.yaml` from this repo and creates the
+   `aeropulse-backend` web service automatically.
+   Or manually: Render dashboard -> **New -> Blueprint** -> pick this repo.
    (Manual alternative: **New -> Web Service**, Root Directory `backend`, Build
    `pip install -r requirements.txt`, Start
    `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.)
